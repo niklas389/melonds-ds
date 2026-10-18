@@ -30,6 +30,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+#include <iterator>
 #include <vector>
 
 #include <sys/syscall.h>
@@ -41,6 +42,10 @@ namespace {
     constexpr size_t MaxSamples = 1 << 18;
     constexpr long SampleIntervalNs = 1'000'000; // 1 ms of thread CPU time (kernel tick-limited)
     constexpr double DumpIntervalSec = 15.0;
+    // Gaps between frames longer than this are pauses (menu, loading), not slow frames
+    constexpr double PauseThresholdSec = 0.25;
+    constexpr double BucketLimitsMs[] = {16.7, 20, 25, 33.4, 50, 100};
+    constexpr size_t NumBuckets = std::size(BucketLimitsMs) + 1;
 
     struct Sample {
         uint64_t pc;
@@ -60,6 +65,32 @@ namespace {
     double StartTime = 0;
     double LastFrameStart = 0;
     double FrameIntervalTotal = 0;
+    uint64_t ActiveIntervals = 0;
+    double ActiveIntervalTotal = 0;
+    double ActiveRunTotal = 0;
+    double PausedTotal = 0;
+    uint64_t Pauses = 0;
+    double PendingInterval = -1;
+    uint64_t RunBuckets[NumBuckets] {};
+    uint64_t IntervalBuckets[NumBuckets] {};
+
+    size_t Bucket(double seconds) noexcept {
+        double ms = seconds * 1000.0;
+        size_t i = 0;
+        while (i < std::size(BucketLimitsMs) && ms >= BucketLimitsMs[i]) i++;
+        return i;
+    }
+
+    void WriteBuckets(FILE* f, const char* name, const uint64_t* buckets) {
+        fprintf(f, "%s", name);
+        for (size_t i = 0; i < NumBuckets; i++) {
+            if (i < std::size(BucketLimitsMs))
+                fprintf(f, " <%g:%llu", BucketLimitsMs[i], (unsigned long long)buckets[i]);
+            else
+                fprintf(f, " >=%g:%llu", BucketLimitsMs[i - 1], (unsigned long long)buckets[i]);
+        }
+        fprintf(f, "\n");
+    }
 
     double Now() noexcept {
         timespec ts {};
@@ -118,6 +149,13 @@ namespace {
         fprintf(f, "retro_run_avg_ms %.3f\n", Frames ? FrameTimeTotal * 1000.0 / Frames : 0.0);
         fprintf(f, "retro_run_max_ms %.3f\n", FrameTimeMax * 1000.0);
         fprintf(f, "frame_interval_avg_ms %.3f\n", Frames > 1 ? FrameIntervalTotal * 1000.0 / (Frames - 1) : 0.0);
+        fprintf(f, "active_fps %.2f\n", ActiveIntervalTotal > 0 ? ActiveIntervals / ActiveIntervalTotal : 0.0);
+        fprintf(f, "active_run_avg_ms %.3f\n", ActiveIntervals ? ActiveRunTotal * 1000.0 / ActiveIntervals : 0.0);
+        fprintf(f, "active_outside_avg_ms %.3f\n", ActiveIntervals ? (ActiveIntervalTotal - ActiveRunTotal) * 1000.0 / ActiveIntervals : 0.0);
+        fprintf(f, "pauses %llu\n", (unsigned long long)Pauses);
+        fprintf(f, "paused_s %.3f\n", PausedTotal);
+        WriteBuckets(f, "run_ms", RunBuckets);
+        WriteBuckets(f, "interval_ms", IntervalBuckets);
         fprintf(f, "samples %zu\n", n);
         fprintf(f, "page_size %ld\n", sysconf(_SC_PAGESIZE));
 
@@ -171,7 +209,16 @@ namespace {
 void MelonDsDs::sampler::BeginFrame() noexcept {
     if (!Started) Start();
     double now = Now();
-    if (LastFrameStart > 0) FrameIntervalTotal += now - LastFrameStart;
+    if (LastFrameStart > 0) {
+        double interval = now - LastFrameStart;
+        FrameIntervalTotal += interval;
+        if (interval >= PauseThresholdSec) {
+            Pauses++;
+            PausedTotal += interval;
+        } else {
+            PendingInterval = interval;
+        }
+    }
     LastFrameStart = now;
 }
 
@@ -182,6 +229,15 @@ void MelonDsDs::sampler::EndFrame() noexcept {
     FrameTimeTotal += frameTime;
     FrameTimeMax = std::max(FrameTimeMax, frameTime);
     Frames++;
+    RunBuckets[Bucket(frameTime)]++;
+    if (PendingInterval >= 0) {
+        // The interval that ended when this frame began, paired with this frame's run time
+        ActiveIntervals++;
+        ActiveIntervalTotal += PendingInterval;
+        ActiveRunTotal += frameTime;
+        IntervalBuckets[Bucket(PendingInterval)]++;
+        PendingInterval = -1;
+    }
 
     if (now - LastDump >= DumpIntervalSec) {
         Dump();
@@ -197,6 +253,11 @@ void MelonDsDs::sampler::Stop() noexcept {
     Frames = 0;
     FrameTimeTotal = FrameTimeMax = FrameIntervalTotal = 0;
     LastFrameStart = 0;
+    ActiveIntervals = Pauses = 0;
+    ActiveIntervalTotal = ActiveRunTotal = PausedTotal = 0;
+    PendingInterval = -1;
+    std::fill(std::begin(RunBuckets), std::end(RunBuckets), 0);
+    std::fill(std::begin(IntervalBuckets), std::end(IntervalBuckets), 0);
     SampleCount.store(0);
     free(Samples);
     Samples = nullptr;
