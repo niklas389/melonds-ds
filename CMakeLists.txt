@@ -46,6 +46,18 @@ message(STATUS "GIT_STATE: ${GIT_STATE}")
 message(STATUS "GIT_BRANCH: ${GIT_BRANCH}")
 
 option(TRACY_ENABLE "Build with Tracy support." OFF)
+option(MELONDSDS_SAMPLER "Build with a built-in PC sampling profiler that writes to MELONDSDS_PROFILE_PATH (Linux only)." OFF)
+
+# Only the libretro API (declared with RETRO_API) needs to be exported.
+# Exporting everything else makes every call between melonDS's own functions
+# go through the PLT and keeps the compiler from inlining them.
+option(ENABLE_HIDDEN_VISIBILITY "Hide all symbols except the libretro API." OFF)
+if (ENABLE_HIDDEN_VISIBILITY)
+    set(CMAKE_C_VISIBILITY_PRESET hidden)
+    set(CMAKE_CXX_VISIBILITY_PRESET hidden)
+    set(CMAKE_VISIBILITY_INLINES_HIDDEN ON)
+    set(CMAKE_POLICY_DEFAULT_CMP0063 NEW) # Apply the presets to static libraries in subprojects too
+endif ()
 
 if (IOS)
     message(STATUS "JIT is disabled by default in iOS builds.")

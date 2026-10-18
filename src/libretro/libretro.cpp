@@ -28,6 +28,10 @@
 #include <span>
 
 #include <compat/strl.h>
+
+#ifdef MELONDSDS_SAMPLER
+#include "sampler.hpp"
+#endif
 #include <file/file_path.h>
 #include <libretro.h>
 #include <retro_assert.h>
@@ -112,10 +116,16 @@ PUBLIC_SYMBOL void retro_set_controller_port_device(unsigned port, unsigned devi
 }
 
 PUBLIC_SYMBOL [[gnu::hot]] void retro_run(void) {
+#ifdef MELONDSDS_SAMPLER
+    MelonDsDs::sampler::BeginFrame();
+#endif
     {
         ZoneScopedN(TracyFunction);
         MelonDsDs::Core.Run();
     }
+#ifdef MELONDSDS_SAMPLER
+    MelonDsDs::sampler::EndFrame();
+#endif
     FrameMark;
 }
 
@@ -123,6 +133,9 @@ PUBLIC_SYMBOL void retro_unload_game(void) {
     ZoneScopedN(TracyFunction);
     using MelonDsDs::Core;
     retro::debug("retro_unload_game()");
+#ifdef MELONDSDS_SAMPLER
+    MelonDsDs::sampler::Stop();
+#endif
     // No need to flush SRAM to the buffer, Platform::WriteNDSSave has been doing that for us this whole time
     // No need to flush the homebrew save data either, the CartHomebrew destructor does that
 

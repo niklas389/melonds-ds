@@ -206,6 +206,11 @@ if (HAVE_NETWORKING)
     endif()
 endif ()
 
+if (MELONDSDS_SAMPLER)
+    target_sources(melondsds_libretro PRIVATE sampler.cpp sampler.hpp)
+    target_compile_definitions(melondsds_libretro PRIVATE MELONDSDS_SAMPLER)
+endif ()
+
 if (TRACY_ENABLE)
     target_sources(melondsds_libretro PRIVATE tracy/memory.cpp)
 
