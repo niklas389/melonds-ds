@@ -282,6 +282,14 @@ if (WIN32 AND MINGW)
     target_link_options(melondsds_libretro PUBLIC -static-libgcc -static-libstdc++ -static)
 endif()
 
+if (CMAKE_SYSTEM_NAME MATCHES "Linux|Android|BSD")
+    # Keep the symbols of the static libraries we link (melonDS itself, libretro-common, fmt, ...)
+    # out of the core's dynamic symbol table. Otherwise every call between melonDS's own functions
+    # goes through the PLT and can be interposed, so it can't be inlined.
+    # On a TrimUI Brick (Cortex-A53) that made the average frame about 23% slower.
+    target_link_options(melondsds_libretro PRIVATE "LINKER:--exclude-libs,ALL")
+endif ()
+
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "(.+)?Clang")
     target_compile_options(melondsds_libretro PUBLIC -Werror=return-type)
     # For some reason, C++ allows functions to not return values in all code paths.

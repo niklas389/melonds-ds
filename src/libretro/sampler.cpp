@@ -46,6 +46,8 @@ namespace {
     constexpr double PauseThresholdSec = 0.25;
     constexpr double BucketLimitsMs[] = {16.7, 20, 25, 33.4, 50, 100};
     constexpr size_t NumBuckets = std::size(BucketLimitsMs) + 1;
+    constexpr double TimelineWindowSec = 5.0;
+    constexpr size_t MaxTimelineWindows = 720; // one hour
 
     struct Sample {
         uint64_t pc;
@@ -73,6 +75,10 @@ namespace {
     double PendingInterval = -1;
     uint64_t RunBuckets[NumBuckets] {};
     uint64_t IntervalBuckets[NumBuckets] {};
+    float Timeline[MaxTimelineWindows] {};
+    size_t TimelineWindows = 0;
+    double WindowStart = 0;
+    uint64_t WindowFrames = 0;
 
     size_t Bucket(double seconds) noexcept {
         double ms = seconds * 1000.0;
@@ -156,6 +162,9 @@ namespace {
         fprintf(f, "paused_s %.3f\n", PausedTotal);
         WriteBuckets(f, "run_ms", RunBuckets);
         WriteBuckets(f, "interval_ms", IntervalBuckets);
+        fprintf(f, "timeline_fps_%gs", TimelineWindowSec);
+        for (size_t i = 0; i < TimelineWindows; i++) fprintf(f, " %.0f", Timeline[i]);
+        fprintf(f, "\n");
         fprintf(f, "samples %zu\n", n);
         fprintf(f, "page_size %ld\n", sysconf(_SC_PAGESIZE));
 
@@ -202,7 +211,7 @@ namespace {
         spec.it_value.tv_nsec = SampleIntervalNs;
         if (timer_settime(Timer, 0, &spec, nullptr) != 0) { Failed = true; return; }
 
-        StartTime = LastDump = Now();
+        StartTime = LastDump = WindowStart = Now();
     }
 }
 
@@ -239,6 +248,14 @@ void MelonDsDs::sampler::EndFrame() noexcept {
         PendingInterval = -1;
     }
 
+    WindowFrames++;
+    if (now - WindowStart >= TimelineWindowSec) {
+        if (TimelineWindows < MaxTimelineWindows)
+            Timeline[TimelineWindows++] = static_cast<float>(WindowFrames / (now - WindowStart));
+        WindowStart = now;
+        WindowFrames = 0;
+    }
+
     if (now - LastDump >= DumpIntervalSec) {
         Dump();
         LastDump = Now();
@@ -258,6 +275,8 @@ void MelonDsDs::sampler::Stop() noexcept {
     PendingInterval = -1;
     std::fill(std::begin(RunBuckets), std::end(RunBuckets), 0);
     std::fill(std::begin(IntervalBuckets), std::end(IntervalBuckets), 0);
+    TimelineWindows = 0;
+    WindowFrames = 0;
     SampleCount.store(0);
     free(Samples);
     Samples = nullptr;
