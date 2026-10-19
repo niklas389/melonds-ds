@@ -20,6 +20,10 @@
 
 #include "std/semaphore.hpp"
 
+#ifdef MELONDSDS_SAMPLER
+#include "../sampler.hpp"
+#endif
+
 using namespace melonDS;
 using Platform::Semaphore;
 
@@ -58,6 +62,9 @@ void Platform::Semaphore_Post(Semaphore *sema, int count)
 void Platform::Semaphore_Wait(Semaphore *sema)
 {
     ZoneScopedN(TracyFunction);
+#ifdef MELONDSDS_SAMPLER
+    MelonDsDs::sampler::WaitScope wait(MelonDsDs::sampler::Wait::Semaphore, __builtin_return_address(0));
+#endif
     sema->semaphore.acquire();
 }
 

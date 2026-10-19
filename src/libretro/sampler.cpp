@@ -31,8 +31,10 @@
 #include <cstring>
 #include <ctime>
 #include <iterator>
+#include <string>
 #include <vector>
 
+#include <dirent.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
 #include <ucontext.h>
@@ -79,6 +81,59 @@ namespace {
     size_t TimelineWindows = 0;
     double WindowStart = 0;
     uint64_t WindowFrames = 0;
+
+    // only the thread that runs the frames is measured
+    thread_local bool OnEmuThread = false;
+    pid_t EmuThreadId = 0;
+    double CpuStart = 0;
+    double WaitTotals[3] {};
+    uint64_t WaitCounts[3] {};
+    struct CallerWait {
+        uint64_t caller;
+        double seconds;
+        uint64_t count;
+    };
+    constexpr size_t MaxCallers = 32;
+    CallerWait CallerWaits[MaxCallers] {};
+    size_t NumCallers = 0;
+
+    double ThreadCpu() noexcept {
+        timespec ts {};
+        clock_gettime(CLOCK_THREAD_CPUTIME_ID, &ts);
+        return ts.tv_sec + ts.tv_nsec * 1e-9;
+    }
+
+    // CPU time of every thread in this process, from /proc
+    void WriteThreads(FILE* f, double elapsed) {
+        fprintf(f, "## threads\n");
+        DIR* dir = opendir("/proc/self/task");
+        if (!dir) return;
+        long ticks = sysconf(_SC_CLK_TCK);
+        while (dirent* entry = readdir(dir)) {
+            if (entry->d_name[0] == '.') continue;
+            char path[64];
+            snprintf(path, sizeof(path), "/proc/self/task/%s/stat", entry->d_name);
+            FILE* stat = fopen(path, "r");
+            if (!stat) continue;
+            char buf[512] = {};
+            size_t len = fread(buf, 1, sizeof(buf) - 1, stat);
+            fclose(stat);
+            buf[len] = 0;
+            // the name is in parentheses and may contain spaces
+            char* open = strchr(buf, '(');
+            char* close = strrchr(buf, ')');
+            if (!open || !close) continue;
+            std::string name(open + 1, close);
+            unsigned long utime = 0, stime = 0;
+            // fields after the name: state ppid pgrp session tty_nr tpgid flags minflt cminflt majflt cmajflt utime stime
+            if (sscanf(close + 2, "%*c %*d %*d %*d %*d %*d %*u %*u %*u %*u %*u %lu %lu", &utime, &stime) != 2) continue;
+            double cpu = double(utime + stime) / ticks;
+            int tid = atoi(entry->d_name);
+            fprintf(f, "%d %s %.1f%s\n", tid, name.c_str(), elapsed > 0 ? 100.0 * cpu / elapsed : 0.0,
+                    tid == EmuThreadId ? " emulation" : "");
+        }
+        closedir(dir);
+    }
 
     size_t Bucket(double seconds) noexcept {
         double ms = seconds * 1000.0;
@@ -165,6 +220,12 @@ namespace {
         fprintf(f, "timeline_fps_%gs", TimelineWindowSec);
         for (size_t i = 0; i < TimelineWindows; i++) fprintf(f, " %.0f", Timeline[i]);
         fprintf(f, "\n");
+        fprintf(f, "emu_thread_cpu_pct %.1f\n", elapsed > 0 ? 100.0 * (ThreadCpu() - CpuStart) / elapsed : 0.0);
+        if (Frames) {
+            fprintf(f, "video_cb_ms_per_frame %.3f\n", WaitTotals[(int)MelonDsDs::sampler::Wait::Video] * 1000.0 / Frames);
+            fprintf(f, "audio_cb_ms_per_frame %.3f\n", WaitTotals[(int)MelonDsDs::sampler::Wait::Audio] * 1000.0 / Frames);
+            fprintf(f, "thread_wait_ms_per_frame %.3f\n", WaitTotals[(int)MelonDsDs::sampler::Wait::Semaphore] * 1000.0 / Frames);
+        }
         fprintf(f, "samples %zu\n", n);
         fprintf(f, "page_size %ld\n", sysconf(_SC_PAGESIZE));
 
@@ -186,6 +247,16 @@ namespace {
         WriteHistogram(f, "pc", values);
         for (size_t i = 0; i < n; i++) values[i] = Samples[i].lr;
         WriteHistogram(f, "lr", values);
+
+        // where the emulation thread waited for other threads: caller address, ms per frame, waits per frame
+        fprintf(f, "## waits\n");
+        for (size_t i = 0; i < NumCallers; i++) {
+            fprintf(f, "%llx %.3f %.2f\n", (unsigned long long)CallerWaits[i].caller,
+                    Frames ? CallerWaits[i].seconds * 1000.0 / Frames : 0.0,
+                    Frames ? double(CallerWaits[i].count) / Frames : 0.0);
+        }
+
+        WriteThreads(f, elapsed);
         fclose(f);
     }
 
@@ -212,7 +283,31 @@ namespace {
         if (timer_settime(Timer, 0, &spec, nullptr) != 0) { Failed = true; return; }
 
         StartTime = LastDump = WindowStart = Now();
+        OnEmuThread = true;
+        EmuThreadId = static_cast<pid_t>(syscall(SYS_gettid));
+        CpuStart = ThreadCpu();
     }
+}
+
+double MelonDsDs::sampler::Clock() noexcept {
+    return OnEmuThread ? Now() : 0;
+}
+
+void MelonDsDs::sampler::AddWait(Wait kind, double seconds, const void* caller) noexcept {
+    if (!OnEmuThread || !Started || Failed) return;
+    WaitTotals[(int)kind] += seconds;
+    WaitCounts[(int)kind]++;
+    if (kind != Wait::Semaphore) return;
+    uint64_t address = reinterpret_cast<uint64_t>(caller);
+    for (size_t i = 0; i < NumCallers; i++) {
+        if (CallerWaits[i].caller == address) {
+            CallerWaits[i].seconds += seconds;
+            CallerWaits[i].count++;
+            return;
+        }
+    }
+    if (NumCallers < MaxCallers)
+        CallerWaits[NumCallers++] = { address, seconds, 1 };
 }
 
 void MelonDsDs::sampler::BeginFrame() noexcept {
@@ -277,6 +372,9 @@ void MelonDsDs::sampler::Stop() noexcept {
     std::fill(std::begin(IntervalBuckets), std::end(IntervalBuckets), 0);
     TimelineWindows = 0;
     WindowFrames = 0;
+    std::fill(std::begin(WaitTotals), std::end(WaitTotals), 0);
+    std::fill(std::begin(WaitCounts), std::end(WaitCounts), 0);
+    NumCallers = 0;
     SampleCount.store(0);
     free(Samples);
     Samples = nullptr;

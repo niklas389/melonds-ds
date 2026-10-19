@@ -44,6 +44,10 @@
 #include "tracy.hpp"
 #include "version.hpp"
 
+#ifdef MELONDSDS_SAMPLER
+#include "sampler.hpp"
+#endif
+
 using std::string;
 using std::string_view;
 using std::optional;
@@ -144,6 +148,9 @@ void retro::input_poll() {
 
 size_t retro::audio_sample_batch(const int16_t* data, size_t frames) {
     ZoneScopedN(TracyFunction);
+#ifdef MELONDSDS_SAMPLER
+    MelonDsDs::sampler::WaitScope wait(MelonDsDs::sampler::Wait::Audio);
+#endif
     if (_audio_sample_batch) {
         return _audio_sample_batch(data, frames);
     } else {
@@ -153,6 +160,9 @@ size_t retro::audio_sample_batch(const int16_t* data, size_t frames) {
 
 void retro::video_refresh(const void* data, unsigned width, unsigned height, size_t pitch) {
     ZoneScopedN(TracyFunction);
+#ifdef MELONDSDS_SAMPLER
+    MelonDsDs::sampler::WaitScope wait(MelonDsDs::sampler::Wait::Video);
+#endif
     if (_video_refresh) {
         _video_refresh(data, width, height, pitch);
     }

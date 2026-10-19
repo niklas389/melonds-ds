@@ -21,6 +21,24 @@ namespace MelonDsDs::sampler {
     void BeginFrame() noexcept;
     void EndFrame() noexcept;
     void Stop() noexcept;
+
+    // Time the emulation thread spends blocked rather than computing,
+    // e.g. in the frontend's video or audio callback or waiting for another thread.
+    enum class Wait { Video, Audio, Semaphore };
+    double Clock() noexcept;
+    void AddWait(Wait kind, double seconds, const void* caller = nullptr) noexcept;
+
+    class WaitScope {
+    public:
+        explicit WaitScope(Wait kind, const void* caller = nullptr) noexcept : _kind(kind), _caller(caller), _start(Clock()) {}
+        ~WaitScope() noexcept { AddWait(_kind, Clock() - _start, _caller); }
+        WaitScope(const WaitScope&) = delete;
+        WaitScope& operator=(const WaitScope&) = delete;
+    private:
+        Wait _kind;
+        const void* _caller;
+        double _start;
+    };
 }
 
 #endif // MELONDSDS_SAMPLER_HPP
