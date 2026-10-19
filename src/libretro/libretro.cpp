@@ -32,6 +32,10 @@
 #ifdef MELONDSDS_SAMPLER
 #include "sampler.hpp"
 #endif
+#ifdef MELONDSDS_PGO_GENERATE
+extern "C" void __gcov_dump(void);
+extern "C" void __gcov_reset(void);
+#endif
 #include <file/file_path.h>
 #include <libretro.h>
 #include <retro_assert.h>
@@ -135,6 +139,11 @@ PUBLIC_SYMBOL void retro_unload_game(void) {
     retro::debug("retro_unload_game()");
 #ifdef MELONDSDS_SAMPLER
     MelonDsDs::sampler::Stop();
+#endif
+#ifdef MELONDSDS_PGO_GENERATE
+    // Write the profile now; frontends don't always exit cleanly
+    __gcov_dump();
+    __gcov_reset();
 #endif
     // No need to flush SRAM to the buffer, Platform::WriteNDSSave has been doing that for us this whole time
     // No need to flush the homebrew save data either, the CartHomebrew destructor does that

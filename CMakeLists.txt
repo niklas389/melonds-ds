@@ -47,6 +47,21 @@ message(STATUS "GIT_BRANCH: ${GIT_BRANCH}")
 
 option(TRACY_ENABLE "Build with Tracy support." OFF)
 option(MELONDSDS_SAMPLER "Build with a built-in PC sampling profiler that writes to MELONDSDS_PROFILE_PATH (Linux only)." OFF)
+set(MELONDSDS_PGO_GENERATE "" CACHE PATH "GCC/Clang: instrument the build for profile-guided optimisation, writing profiles to this directory on the target device.")
+set(MELONDSDS_PGO_USE "" CACHE PATH "GCC/Clang: optimise with the profiles in this directory (from a MELONDSDS_PGO_GENERATE build in the same build directory).")
+
+# Applies to everything built from here on, melonDS included
+if (MELONDSDS_PGO_GENERATE)
+    # plain counters: much faster with several threads; the odd count lost to a race doesn't matter here
+    add_compile_options("-fprofile-generate=${MELONDSDS_PGO_GENERATE}" -fprofile-update=single)
+    add_link_options("-fprofile-generate=${MELONDSDS_PGO_GENERATE}")
+    add_compile_definitions(MELONDSDS_PGO_GENERATE)
+elseif (MELONDSDS_PGO_USE)
+    # code that the training run didn't reach is still optimised normally
+    # (profile-correction smooths out counts that threads raced on;
+    # retro_unload_game differs from the instrumented build, which dumps the profile there)
+    add_compile_options("-fprofile-use=${MELONDSDS_PGO_USE}" -fprofile-partial-training -fprofile-correction -Wno-missing-profile -Wno-coverage-mismatch)
+endif ()
 
 if (IOS)
     message(STATUS "JIT is disabled by default in iOS builds.")
