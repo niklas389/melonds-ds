@@ -43,7 +43,7 @@ endfunction()
 
 # jtg/fix-uninitialized-opengl plus OpenGL ES 3.2 support for the OpenGL renderers (ENABLE_GLES)
 # and the threaded 2D / split 3D software renderer
-fetch_dependency(melonDS "https://github.com/niklas389/melonDS" "c9a3b450fae97d9c5adc183451f2e7f54dc65ff0")
+fetch_dependency(melonDS "https://github.com/niklas389/melonDS" "3ca3f66ade67ac580315bd6814a8d0cebc437aa9")
 fetch_dependency(libretro-common "https://github.com/libretro/libretro-common" "fa8a1b5")
 fetch_dependency("embed-binaries" "https://github.com/andoalon/embed-binaries" "078b62b")
 fetch_dependency(glm "https://github.com/g-truc/glm" "6f14f47")
