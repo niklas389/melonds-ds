@@ -43,6 +43,7 @@ void MelonDsDs::ApplyRendererSettings(melonDS::NDS& nds, const CoreConfig& confi
         .HiresCoordinates = config.HiresCoordinates(), // Compute renderer only
         .BetterPolygons = config.BetterPolygonSplitting(), // Legacy OpenGL renderer only
         .Threaded2D = config.Threaded2DRenderer(), // Software renderer only
+        .Split3D = config.Split3DRenderer(), // Threaded software renderer only
     };
 
     nds.GetRenderer().SetRenderSettings(settings);

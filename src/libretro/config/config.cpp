@@ -890,6 +890,13 @@ static void MelonDsDs::config::ParseVideoOptions(CoreConfig& config) noexcept {
         retro::warn("Failed to get value for {}; defaulting to {}", THREADED_2D_RENDERER, values::ENABLED);
         config.SetThreaded2DRenderer(true);
     }
+
+    if (optional<bool> value = ParseBoolean(get_variable(SPLIT_3D_RENDERER))) {
+        config.SetSplit3DRenderer(*value);
+    } else {
+        retro::warn("Failed to get value for {}; defaulting to {}", SPLIT_3D_RENDERER, values::ENABLED);
+        config.SetSplit3DRenderer(true);
+    }
 #endif
 
 #if defined(HAVE_OPENGL) || defined(HAVE_OPENGLES)

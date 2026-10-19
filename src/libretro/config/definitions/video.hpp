@@ -151,6 +151,25 @@ namespace MelonDsDs::config::definitions {
         },
         MelonDsDs::config::values::ENABLED
     };
+
+    constexpr retro_core_option_v2_definition Split3DRenderer {
+        config::video::SPLIT_3D_RENDERER,
+        "Split 3D Rendering",
+        nullptr,
+        "If enabled, the threaded software renderer draws the bottom half of the 3D image on a second thread. "
+        "Faster in 3D-heavy games on devices with four or more CPU cores. "
+        "Only takes effect with Threaded Software Renderer enabled. "
+        "Changes take effect immediately. "
+        "If unsure, leave this enabled.",
+        nullptr,
+        config::video::CATEGORY,
+        {
+            {MelonDsDs::config::values::DISABLED, nullptr},
+            {MelonDsDs::config::values::ENABLED, nullptr},
+            {nullptr, nullptr},
+        },
+        MelonDsDs::config::values::ENABLED
+    };
 #endif
 
     constexpr std::initializer_list<retro_core_option_v2_definition> VideoOptionDefinitions {

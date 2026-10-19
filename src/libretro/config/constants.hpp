@@ -183,6 +183,7 @@ namespace MelonDsDs::config {
         static constexpr const char *const RENDER_MODE = "melonds_render_mode";
         static constexpr const char *const THREADED_RENDERER = "melonds_threaded_renderer";
         static constexpr const char *const THREADED_2D_RENDERER = "melonds_threaded_2d_renderer";
+        static constexpr const char *const SPLIT_3D_RENDERER = "melonds_split_3d_renderer";
     }
 
     namespace values {
