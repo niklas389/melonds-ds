@@ -28,6 +28,17 @@ namespace MelonDsDs::sampler {
     double Clock() noexcept;
     void AddWait(Wait kind, double seconds, const void* caller = nullptr) noexcept;
 
+    // Samples the calling thread too (melonDS's render threads), for as long as the scope lives
+    class ThreadScope {
+    public:
+        ThreadScope() noexcept;
+        ~ThreadScope() noexcept;
+        ThreadScope(const ThreadScope&) = delete;
+        ThreadScope& operator=(const ThreadScope&) = delete;
+    private:
+        int _slot;
+    };
+
     class WaitScope {
     public:
         explicit WaitScope(Wait kind, const void* caller = nullptr) noexcept : _kind(kind), _caller(caller), _start(Clock()) {}

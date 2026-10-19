@@ -20,6 +20,10 @@
 
 #include <utility>
 
+#ifdef MELONDSDS_SAMPLER
+#include "../sampler.hpp"
+#endif
+
 using namespace melonDS;
 using Platform::Thread;
 struct Platform::Thread {
@@ -31,6 +35,9 @@ struct ThreadData {
 
 static void function_trampoline(void *param) {
     auto *data = (ThreadData *) param;
+#ifdef MELONDSDS_SAMPLER
+    MelonDsDs::sampler::ThreadScope sampled;
+#endif
     data->fn();
     delete data;
 }

@@ -41,7 +41,9 @@
 #include <unistd.h>
 
 namespace {
-    constexpr size_t MaxSamples = 1 << 18;
+    constexpr size_t MaxSamples = 1 << 19;
+    // the emulation thread is slot 0; other threads get the next free one
+    constexpr int MaxThreadSlots = 8;
     constexpr long SampleIntervalNs = 1'000'000; // 1 ms of thread CPU time (kernel tick-limited)
     constexpr double DumpIntervalSec = 15.0;
     // Gaps between frames longer than this are pauses (menu, loading), not slow frames
@@ -54,9 +56,13 @@ namespace {
     struct Sample {
         uint64_t pc;
         uint64_t lr;
+        uint32_t slot;
     };
 
-    Sample* Samples = nullptr;
+    // static, so that threads started before the first frame can be sampled
+    Sample Samples[MaxSamples];
+    std::atomic<bool> SlotUsed[MaxThreadSlots] {};
+    std::atomic<pid_t> SlotThread[MaxThreadSlots] {};
     std::atomic<size_t> SampleCount {0};
     timer_t Timer {};
     bool Started = false;
@@ -159,19 +165,20 @@ namespace {
         return ts.tv_sec + ts.tv_nsec * 1e-9;
     }
 
-    void Handler(int, siginfo_t*, void* context) {
+    void Handler(int, siginfo_t* info, void* context) {
         size_t i = SampleCount.fetch_add(1, std::memory_order_relaxed);
         if (i >= MaxSamples) {
             SampleCount.store(MaxSamples, std::memory_order_relaxed);
             return;
         }
         const ucontext_t* uc = static_cast<const ucontext_t*>(context);
+        uint32_t slot = (uint32_t)info->si_value.sival_int;
 #if defined(__aarch64__)
-        Samples[i] = { uc->uc_mcontext.pc, uc->uc_mcontext.regs[30] };
+        Samples[i] = { uc->uc_mcontext.pc, uc->uc_mcontext.regs[30], slot };
 #elif defined(__x86_64__)
-        Samples[i] = { (uint64_t)uc->uc_mcontext.gregs[REG_RIP], 0 };
+        Samples[i] = { (uint64_t)uc->uc_mcontext.gregs[REG_RIP], 0, slot };
 #else
-        Samples[i] = { 0, 0 };
+        Samples[i] = { 0, 0, slot };
 #endif
     }
 
@@ -242,11 +249,23 @@ namespace {
             fclose(maps);
         }
 
-        std::vector<uint64_t> values(n);
-        for (size_t i = 0; i < n; i++) values[i] = Samples[i].pc;
+        std::vector<uint64_t> values;
+        values.reserve(n);
+        for (size_t i = 0; i < n; i++) if (Samples[i].slot == 0) values.push_back(Samples[i].pc);
         WriteHistogram(f, "pc", values);
-        for (size_t i = 0; i < n; i++) values[i] = Samples[i].lr;
+        values.clear();
+        for (size_t i = 0; i < n; i++) if (Samples[i].slot == 0) values.push_back(Samples[i].lr);
         WriteHistogram(f, "lr", values);
+
+        // the other sampled threads, by thread ID
+        for (int slot = 1; slot < MaxThreadSlots; slot++) {
+            values.clear();
+            for (size_t i = 0; i < n; i++) if (Samples[i].slot == (uint32_t)slot) values.push_back(Samples[i].pc);
+            if (values.empty()) continue;
+            char title[32];
+            snprintf(title, sizeof(title), "pc.%d", (int)SlotThread[slot].load());
+            WriteHistogram(f, title, values);
+        }
 
         // where the emulation thread waited for other threads: caller address, ms per frame, waits per frame
         fprintf(f, "## waits\n");
@@ -260,33 +279,67 @@ namespace {
         fclose(f);
     }
 
-    void Start() {
-        Started = true;
-        Samples = static_cast<Sample*>(calloc(MaxSamples, sizeof(Sample)));
-        if (!Samples) { Failed = true; return; }
+    bool InstallHandler() {
+        static std::atomic<int> installed {0};
+        int expected = 0;
+        if (installed.compare_exchange_strong(expected, 1)) {
+            struct sigaction sa {};
+            sa.sa_sigaction = Handler;
+            sa.sa_flags = SA_SIGINFO | SA_RESTART;
+            sigemptyset(&sa.sa_mask);
+            installed = sigaction(SIGPROF, &sa, nullptr) == 0 ? 2 : 3;
+        }
+        while (installed.load() == 1) {}
+        return installed.load() == 2;
+    }
 
-        struct sigaction sa {};
-        sa.sa_sigaction = Handler;
-        sa.sa_flags = SA_SIGINFO | SA_RESTART;
-        sigemptyset(&sa.sa_mask);
-        if (sigaction(SIGPROF, &sa, nullptr) != 0) { Failed = true; return; }
-
+    // a CPU-time timer that interrupts the calling thread
+    bool StartThreadTimer(timer_t& timer, int slot) {
         sigevent sev {};
         sev.sigev_notify = SIGEV_THREAD_ID;
         sev.sigev_signo = SIGPROF;
+        sev.sigev_value.sival_int = slot;
         sev._sigev_un._tid = static_cast<pid_t>(syscall(SYS_gettid));
-        if (timer_create(CLOCK_THREAD_CPUTIME_ID, &sev, &Timer) != 0) { Failed = true; return; }
+        if (timer_create(CLOCK_THREAD_CPUTIME_ID, &sev, &timer) != 0) return false;
 
         itimerspec spec {};
         spec.it_interval.tv_nsec = SampleIntervalNs;
         spec.it_value.tv_nsec = SampleIntervalNs;
-        if (timer_settime(Timer, 0, &spec, nullptr) != 0) { Failed = true; return; }
+        if (timer_settime(timer, 0, &spec, nullptr) != 0) { timer_delete(timer); return false; }
+        return true;
+    }
+
+    thread_local timer_t ThreadTimer {};
+
+    void Start() {
+        Started = true;
+        if (!InstallHandler()) { Failed = true; return; }
+        if (!StartThreadTimer(Timer, 0)) { Failed = true; return; }
 
         StartTime = LastDump = WindowStart = Now();
         OnEmuThread = true;
         EmuThreadId = static_cast<pid_t>(syscall(SYS_gettid));
         CpuStart = ThreadCpu();
     }
+}
+
+MelonDsDs::sampler::ThreadScope::ThreadScope() noexcept : _slot(-1) {
+    if (!InstallHandler()) return;
+    for (int slot = 1; slot < MaxThreadSlots; slot++) {
+        bool expected = false;
+        if (SlotUsed[slot].compare_exchange_strong(expected, true)) {
+            SlotThread[slot] = static_cast<pid_t>(syscall(SYS_gettid));
+            if (StartThreadTimer(ThreadTimer, slot)) _slot = slot;
+            else SlotUsed[slot] = false;
+            return;
+        }
+    }
+}
+
+MelonDsDs::sampler::ThreadScope::~ThreadScope() noexcept {
+    if (_slot < 0) return;
+    timer_delete(ThreadTimer);
+    SlotUsed[_slot] = false;
 }
 
 double MelonDsDs::sampler::Clock() noexcept {
@@ -376,6 +429,4 @@ void MelonDsDs::sampler::Stop() noexcept {
     std::fill(std::begin(WaitCounts), std::end(WaitCounts), 0);
     NumCallers = 0;
     SampleCount.store(0);
-    free(Samples);
-    Samples = nullptr;
 }
