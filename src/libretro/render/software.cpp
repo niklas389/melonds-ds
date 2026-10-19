@@ -83,13 +83,25 @@ void MelonDsDs::SoftwareRenderState::Render(
 
     const auto* topScreenBuffer = static_cast<const uint32_t*>(topBuffer);
     const auto* bottomScreenBuffer = static_cast<const uint32_t*>(bottomBuffer);
+
+    // In the plain top/bottom layout, melonDS's screens may already be stacked in memory;
+    // then they can be shown as they are, unless the cursor has to be drawn on top
+    bool cursorShown = !nds.IsLidClosed() && inputState.CursorVisible();
+    if (screenLayout.Layout() == ScreenLayout::TopBottom
+        && buffer.Width() == NDS_SCREEN_WIDTH && buffer.Height() == NDS_SCREEN_HEIGHT * 2
+        && bottomScreenBuffer == topScreenBuffer + NDS_SCREEN_AREA<size_t>
+        && !cursorShown) {
+        retro::video_refresh(topScreenBuffer, NDS_SCREEN_WIDTH, NDS_SCREEN_HEIGHT * 2, NDS_SCREEN_WIDTH * sizeof(uint32_t));
+        return;
+    }
+
     CombineScreens(
         span<const uint32_t, NDS_SCREEN_AREA<size_t>>(topScreenBuffer, NDS_SCREEN_AREA<size_t>),
         span<const uint32_t, NDS_SCREEN_AREA<size_t>>(bottomScreenBuffer, NDS_SCREEN_AREA<size_t>),
         screenLayout
     );
 
-    if (!nds.IsLidClosed() && inputState.CursorVisible()) {
+    if (cursorShown) {
         DrawCursor(inputState, config, screenLayout);
     }
 
@@ -224,8 +236,16 @@ void MelonDsDs::SoftwareRenderState::CombineScreens(
 ) noexcept {
     ZoneScopedN(TracyFunction);
 
-    buffer.Clear();
     ScreenLayout layout = screenLayout.Layout();
+
+    // Clearing is only needed if the screens don't cover the whole buffer
+    // (gaps, hybrid or scaled screens)
+    bool scaledSecondary = LayoutSupportsSecondaryScreenScale(layout) && screenLayout.SecondaryScreenScale() < 100;
+    unsigned screensShown = (layout == ScreenLayout::TopOnly || layout == ScreenLayout::BottomOnly) ? 1 : 2;
+    bool covered = LayoutSupportsDirectCopy(layout) && !scaledSecondary
+        && size_t(buffer.Width()) * buffer.Height() == NDS_SCREEN_AREA<size_t> * screensShown;
+    if (!covered)
+        buffer.Clear();
 
     if (IsHybridLayout(layout)) {
         auto primaryBuffer = layout == ScreenLayout::HybridTop || layout == ScreenLayout::FlippedHybridTop ? topBuffer : bottomBuffer;
