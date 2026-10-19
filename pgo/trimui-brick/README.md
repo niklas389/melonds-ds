@@ -5,7 +5,7 @@ GCC profiles recorded on a TrimUI Brick (Allwinner A133P, Cortex-A53, Knulli) wi
 (world map and World 1-1) and the Animal Crossing: Wild World intro, about five minutes each.
 They contain only execution counts; there is no game, save or user data in them.
 
-Recorded with melonDS DS at `881f261` (melonDS `95074f9`). Code that changed since then
+Recorded with melonDS DS at `b6f91a5` (melonDS `c9a3b45`). Code that changed since then
 is built without profile data, which is harmless but loses the optimisation for it.
 
 GCC finds the profile of each object file by its path, which is encoded in the file names,
