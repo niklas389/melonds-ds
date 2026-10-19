@@ -61,21 +61,27 @@ auto fmt::formatter<MelonDsDs::FormattedGLEnum>::format(MelonDsDs::FormattedGLEn
         case GL_FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT:
             name = "GL_FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT";
             break;
+#ifdef GL_FRAMEBUFFER_INCOMPLETE_DRAW_BUFFER
         case GL_FRAMEBUFFER_INCOMPLETE_DRAW_BUFFER:
             name = "GL_FRAMEBUFFER_INCOMPLETE_DRAW_BUFFER";
             break;
+#endif
+#ifdef GL_FRAMEBUFFER_INCOMPLETE_READ_BUFFER
         case GL_FRAMEBUFFER_INCOMPLETE_READ_BUFFER:
             name = "GL_FRAMEBUFFER_INCOMPLETE_READ_BUFFER";
             break;
+#endif
         case GL_FRAMEBUFFER_UNSUPPORTED:
             name = "GL_FRAMEBUFFER_UNSUPPORTED";
             break;
         case GL_FRAMEBUFFER_INCOMPLETE_MULTISAMPLE:
             name = "GL_FRAMEBUFFER_INCOMPLETE_MULTISAMPLE";
             break;
+#ifdef GL_FRAMEBUFFER_INCOMPLETE_LAYER_TARGETS
         case GL_FRAMEBUFFER_INCOMPLETE_LAYER_TARGETS:
             name = "GL_FRAMEBUFFER_INCOMPLETE_LAYER_TARGETS";
             break;
+#endif
     }
     return formatter<string_view>::format(name, ctx);
 }

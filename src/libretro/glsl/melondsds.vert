@@ -14,7 +14,7 @@ void main()
 {
     vec4 fpos;
     fpos.xy = ((vPosition * 2.0) / uScreenSize) - 1.0;
-    fpos.y *= -1;
+    fpos.y *= -1.0;
     fpos.z = 0.0;
     fpos.w = 1.0;
     gl_Position = fpos;

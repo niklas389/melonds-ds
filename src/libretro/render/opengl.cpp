@@ -50,6 +50,8 @@ using MelonDsDs::ScreenLayout;
 constexpr unsigned VERTEXES_PER_SCREEN = 6;
 
 // The OpenGL core-profile versions each of melonDS's OpenGL-based renderers needs, as (major, minor)
+// OpenGL 3.2 core, or OpenGL ES 3.2 (melonDS's renderers use glColorMaski, glFramebufferTexture
+// and GL_CLAMP_TO_BORDER, which OpenGL ES only has since 3.2)
 constexpr std::pair<GLint, GLint> LEGACY_GL_VERSION {3, 2};
 constexpr std::pair<GLint, GLint> COMPUTE_GL_VERSION {4, 3};
 
@@ -180,7 +182,11 @@ MelonDsDs::OpenGLRenderState::OpenGLRenderState(RenderMode mode) : _mode(mode) {
     // Its compute renderer's shaders are "#version 430 core", so that one needs 4.3.
     // The frontend gets exactly one version request per context,
     // which is why each render mode gets its own OpenGLRenderState.
+#ifdef HAVE_OPENGLES
+    _hw_render.context_type = RETRO_HW_CONTEXT_OPENGLES_VERSION;
+#else
     _hw_render.context_type = RETRO_HW_CONTEXT_OPENGL_CORE;
+#endif
     _hw_render.version_major = LEGACY_GL_VERSION.first;
     _hw_render.version_minor = LEGACY_GL_VERSION.second;
 #ifdef HAVE_COMPUTE_RENDERER
@@ -355,6 +361,24 @@ void MelonDsDs::OpenGLRenderState::CheckContextVersion() {
     _contextVersion = {0, 0};
     glGetIntegerv(GL_MAJOR_VERSION, &_contextVersion.first);
     glGetIntegerv(GL_MINOR_VERSION, &_contextVersion.second);
+
+#ifdef HAVE_OPENGLES
+    // eglGetProcAddress may hand out pointers even for functions the context doesn't have,
+    // so the 3.2 functions resolved earlier are only safe to call on a 3.2 context
+    if (_contextVersion < LEGACY_GL_VERSION) {
+        retro::error(
+            "melonDS's OpenGL renderer needs OpenGL ES {}.{}, but the frontend provided {}.{}",
+            LEGACY_GL_VERSION.first, LEGACY_GL_VERSION.second, _contextVersion.first, _contextVersion.second
+        );
+        throw opengl_not_initialized_exception(
+            fmt::format(
+                "OpenGL ES {}.{} context is too old for the OpenGL renderer",
+                _contextVersion.first, _contextVersion.second
+            ),
+            "This device's OpenGL ES version is too old for the OpenGL renderer; using software rendering instead."
+        );
+    }
+#endif
 
     // Only the compute renderer needs checking:
     // the frontend can't give us a core-profile context older than 3.2 (there's no such thing),

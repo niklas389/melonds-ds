@@ -215,14 +215,27 @@ RETRO_END_DECLS
 
 #ifdef HAVE_OPENGLES
 #define GL_UNSIGNED_SHORT_1_5_5_5_REV GL_UNSIGNED_SHORT_1_5_5_5_REV_EXT
-#define GL_WRITE_ONLY GL_WRITE_ONLY_OES
 #define GL_BGRA GL_BGRA_EXT
-#define glBindFragDataLocation glBindFragDataLocationEXT
 #define glClearDepth glClearDepthf
-#define glColorMaski glColorMaskiEXT
 #define glDepthRange glDepthRangef
-#define glFramebufferTexture glFramebufferTextureEXT
-#define glMapBuffer glMapBufferOES
+
+// The core links against OpenGL ES 3.0, but melonDS's renderers also use
+// these OpenGL ES 3.2 functions, which are resolved when the context is ready
+// (see melondsds_base_gl_symbol_map in glsym_private.cpp).
+typedef void (GL_APIENTRYP MDSGLSYMGLCOLORMASKIPROC) (GLuint index, GLboolean r, GLboolean g, GLboolean b, GLboolean a);
+typedef void (GL_APIENTRYP MDSGLSYMGLFRAMEBUFFERTEXTUREPROC) (GLenum target, GLenum attachment, GLuint texture, GLint level);
+typedef void (GL_APIENTRYP MDSGLSYMGLOBJECTLABELPROC) (GLenum identifier, GLuint name, GLsizei length, const GLchar *label);
+
+RETRO_BEGIN_DECLS
+extern MDSGLSYMGLCOLORMASKIPROC melondsds_glColorMaski;
+extern MDSGLSYMGLFRAMEBUFFERTEXTUREPROC melondsds_glFramebufferTexture;
+extern MDSGLSYMGLOBJECTLABELPROC melondsds_glObjectLabel;
+extern const struct rglgen_sym_map melondsds_base_gl_symbol_map[];
+RETRO_END_DECLS
+
+#define glColorMaski melondsds_glColorMaski
+#define glFramebufferTexture melondsds_glFramebufferTexture
+#define glObjectLabel melondsds_glObjectLabel
 
 #ifndef GL_READ_ONLY
 #define GL_READ_ONLY 0x88B8

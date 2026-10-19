@@ -22,6 +22,18 @@ void glDrawBuffer(GLenum buf)
 {
     glDrawBuffers(1, &buf);
 }
+
+MDSGLSYMGLCOLORMASKIPROC melondsds_glColorMaski;
+MDSGLSYMGLFRAMEBUFFERTEXTUREPROC melondsds_glFramebufferTexture;
+MDSGLSYMGLOBJECTLABELPROC melondsds_glObjectLabel;
+
+// OpenGL ES 3.2 functions; the core requires an OpenGL ES 3.2 context
+const struct rglgen_sym_map melondsds_base_gl_symbol_map[] = {
+    { "glColorMaski", (void*)&melondsds_glColorMaski },
+    { "glFramebufferTexture", (void*)&melondsds_glFramebufferTexture },
+    { "glObjectLabel", (void*)&melondsds_glObjectLabel },
+    { nullptr, nullptr },
+};
 #endif
 
 #if defined(HAVE_OPENGL) && !defined(HAVE_OPENGLES)
