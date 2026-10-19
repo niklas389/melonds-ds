@@ -182,6 +182,7 @@ namespace MelonDsDs::config {
         static constexpr const char *const OPENGL_RESOLUTION = "melonds_opengl_resolution";
         static constexpr const char *const RENDER_MODE = "melonds_render_mode";
         static constexpr const char *const THREADED_RENDERER = "melonds_threaded_renderer";
+        static constexpr const char *const THREADED_2D_RENDERER = "melonds_threaded_2d_renderer";
     }
 
     namespace values {

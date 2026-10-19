@@ -73,6 +73,7 @@ bool MelonDsDs::CoreOptionVisibility::Update() noexcept {
 #ifdef HAVE_THREADED_RENDERER
     if (!VisibilityInitialized || ShowSoftwareRenderOptions != oldShowSoftwareRenderOptions) {
         set_option_visible(video::THREADED_RENDERER, ShowSoftwareRenderOptions);
+        set_option_visible(video::THREADED_2D_RENDERER, ShowSoftwareRenderOptions);
         updated = true;
     }
 #endif

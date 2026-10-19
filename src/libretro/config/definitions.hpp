@@ -132,6 +132,7 @@ namespace MelonDsDs::config::definitions {
 #endif
 #if defined(HAVE_THREADS) && defined(HAVE_THREADED_RENDERER)
         ThreadedSoftwareRenderer,
+        Threaded2DRenderer,
 #endif
 
         ShowUnsupportedFeatures,

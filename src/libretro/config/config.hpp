@@ -381,6 +381,13 @@ namespace MelonDsDs {
         bool ThreadedSoftRenderer() const noexcept { return false; }
 #endif
 
+#ifdef HAVE_THREADED_RENDERER
+        [[nodiscard]] bool Threaded2DRenderer() const noexcept { return _threaded2DRenderer; }
+        void SetThreaded2DRenderer(bool threaded2DRenderer) noexcept { _threaded2DRenderer = threaded2DRenderer; }
+#else
+        bool Threaded2DRenderer() const noexcept { return false; }
+#endif
+
         [[nodiscard]] MelonDsDs::ScreenFilter ScreenFilter() const noexcept { return _screenFilter; }
         void SetScreenFilter(MelonDsDs::ScreenFilter screenFilter) noexcept { _screenFilter = screenFilter; }
 
@@ -538,6 +545,7 @@ namespace MelonDsDs {
         bool _hiresCoordinates = true;
         RenderMode _configuredRenderer;
         bool _threadedSoftRenderer = false;
+        bool _threaded2DRenderer = false;
         MelonDsDs::ScreenFilter _screenFilter;
         MelonDsDs::StartTimeMode _startTimeMode = *ParseStartTimeMode(config::definitions::StartTimeMode.default_value);
         years _relativeYearOffset {};

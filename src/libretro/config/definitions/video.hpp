@@ -132,6 +132,25 @@ namespace MelonDsDs::config::definitions {
         },
         MelonDsDs::config::values::ENABLED
     };
+
+    constexpr retro_core_option_v2_definition Threaded2DRenderer {
+        config::video::THREADED_2D_RENDERER,
+        "Threaded 2D Rendering",
+        nullptr,
+        "If enabled, the software renderer will draw the 2D layers (backgrounds and sprites) on a separate thread, "
+        "so the emulation doesn't wait for them. "
+        "Faster on devices with several CPU cores. "
+        "Changes take effect immediately. "
+        "If unsure, leave this enabled.",
+        nullptr,
+        config::video::CATEGORY,
+        {
+            {MelonDsDs::config::values::DISABLED, nullptr},
+            {MelonDsDs::config::values::ENABLED, nullptr},
+            {nullptr, nullptr},
+        },
+        MelonDsDs::config::values::ENABLED
+    };
 #endif
 
     constexpr std::initializer_list<retro_core_option_v2_definition> VideoOptionDefinitions {

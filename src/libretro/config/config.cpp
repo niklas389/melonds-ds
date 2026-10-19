@@ -883,6 +883,13 @@ static void MelonDsDs::config::ParseVideoOptions(CoreConfig& config) noexcept {
         retro::warn("Failed to get value for {}; defaulting to {}", THREADED_RENDERER, values::ENABLED);
         config.SetThreadedSoftRenderer(true);
     }
+
+    if (optional<bool> value = ParseBoolean(get_variable(THREADED_2D_RENDERER))) {
+        config.SetThreaded2DRenderer(*value);
+    } else {
+        retro::warn("Failed to get value for {}; defaulting to {}", THREADED_2D_RENDERER, values::ENABLED);
+        config.SetThreaded2DRenderer(true);
+    }
 #endif
 
 #if defined(HAVE_OPENGL) || defined(HAVE_OPENGLES)
