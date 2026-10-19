@@ -21,7 +21,9 @@
 #include <array>
 #include <chrono>
 #include <cstdlib>
+#include <cstdio>
 #include <cstring>
+#include <string_view>
 #include <utility>
 
 #include <GPU_OpenGL.h>
@@ -207,7 +209,28 @@ MelonDsDs::OpenGLRenderState::OpenGLRenderState(RenderMode mode) : _mode(mode) {
 
     // If this succeeds, the frontend fills in _hw_render's function pointers
     // (but it won't call them until the context is reset)
-    if (!retro::set_hw_render(_hw_render)) {
+    bool accepted = retro::set_hw_render(_hw_render);
+#ifdef HAVE_OPENGLES
+    // Some frontends only accept OpenGL ES 2 context requests (e.g. RetroArch built without OpenGL ES 3),
+    // yet their drivers create OpenGL ES 3.2 contexts anyway.
+    // Ask for less here; CheckContextVersion rejects a context that turns out too old.
+    if (!accepted) {
+        retro::info("Frontend refused an OpenGL ES {}.{} context; asking for OpenGL ES 3", _hw_render.version_major, _hw_render.version_minor);
+        _hw_render.context_type = RETRO_HW_CONTEXT_OPENGLES3;
+        _hw_render.version_major = 3;
+        _hw_render.version_minor = 0;
+        accepted = retro::set_hw_render(_hw_render);
+    }
+    if (!accepted) {
+        retro::info("Frontend refused an OpenGL ES 3 context; asking for OpenGL ES 2");
+        _hw_render.context_type = RETRO_HW_CONTEXT_OPENGLES2;
+        _hw_render.version_major = 2;
+        _hw_render.version_minor = 0;
+        accepted = retro::set_hw_render(_hw_render);
+    }
+#endif
+    if (!accepted) {
+        retro::warn("Frontend refused the OpenGL context request");
         throw opengl_not_initialized_exception();
     }
 
@@ -267,6 +290,11 @@ void MelonDsDs::OpenGLRenderState::ContextReset(melonDS::NDS& nds, const CoreCon
         void* address = nullptr;
         memcpy(&address, entry->ptr, sizeof(address));
         if (!address) {
+            if (std::string_view(entry->sym) == "glObjectLabel") {
+                // Only used for debug labels
+                retro::debug("Frontend couldn't resolve {}; OpenGL objects won't be labeled", entry->sym);
+                continue;
+            }
             retro::error("Frontend couldn't resolve {}", entry->sym);
             ++missingSymbols;
         }
@@ -361,6 +389,35 @@ void MelonDsDs::OpenGLRenderState::CheckContextVersion() {
     _contextVersion = {0, 0};
     glGetIntegerv(GL_MAJOR_VERSION, &_contextVersion.first);
     glGetIntegerv(GL_MINOR_VERSION, &_contextVersion.second);
+
+#ifdef HAVE_OPENGLES
+    if (_contextVersion.first == 0) {
+        // GL_MAJOR_VERSION doesn't exist in OpenGL ES 2 contexts (which may still be 3.x underneath);
+        // the version string reads "OpenGL ES <major>.<minor> <vendor-specific>"
+        while (glGetError() != GL_NO_ERROR) {}
+        const char* version = (const char*)glGetString(GL_VERSION);
+        if (version) {
+            sscanf(version, "OpenGL ES %d.%d", &_contextVersion.first, &_contextVersion.second);
+        }
+    }
+
+    GLint maxUniformBlockSize = 0, maxUniformBindings = 0, uniformOffsetAlignment = 0;
+    GLint maxTextureSize = 0, maxArrayLayers = 0, maxDrawBuffers = 0;
+    glGetIntegerv(GL_MAX_UNIFORM_BLOCK_SIZE, &maxUniformBlockSize);
+    glGetIntegerv(GL_MAX_UNIFORM_BUFFER_BINDINGS, &maxUniformBindings);
+    glGetIntegerv(GL_UNIFORM_BUFFER_OFFSET_ALIGNMENT, &uniformOffsetAlignment);
+    glGetIntegerv(GL_MAX_TEXTURE_SIZE, &maxTextureSize);
+    glGetIntegerv(GL_MAX_ARRAY_TEXTURE_LAYERS, &maxArrayLayers);
+    glGetIntegerv(GL_MAX_DRAW_BUFFERS, &maxDrawBuffers);
+    const char* glslVersion = (const char*)glGetString(GL_SHADING_LANGUAGE_VERSION);
+    retro::info(
+        "OpenGL ES {}.{} (GLSL {}): max uniform block {} B, {} uniform bindings, offset alignment {}, "
+        "max texture {}, {} array layers, {} draw buffers",
+        _contextVersion.first, _contextVersion.second, glslVersion ? glslVersion : "?",
+        maxUniformBlockSize, maxUniformBindings, uniformOffsetAlignment, maxTextureSize, maxArrayLayers, maxDrawBuffers
+    );
+    while (glGetError() != GL_NO_ERROR) {}
+#endif
 
 #ifdef HAVE_OPENGLES
     // eglGetProcAddress may hand out pointers even for functions the context doesn't have,

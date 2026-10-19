@@ -344,6 +344,21 @@ void retro::fmt_log(retro_log_level level, fmt::string_view fmt, fmt::format_arg
     // vformat_to doesn't append a null terminator, so we have to do it ourselves
     buffer.push_back('\0');
 
+#ifdef MELONDSDS_SAMPLER
+    {
+        // Profiling builds also keep every log line (including debug ones the frontend may filter out)
+        static FILE* logFile = [] {
+            const char* path = getenv("MELONDSDS_LOG_PATH");
+            return fopen(path ? path : "/userdata/system/melondsds-log.txt", "w");
+        }();
+        if (logFile) {
+            static const char* const levels[] = {"DEBUG", "INFO", "WARN", "ERROR"};
+            fprintf(logFile, "[%s] %s", (level >= 0 && level <= 3) ? levels[level] : "?", buffer.data());
+            fflush(logFile);
+        }
+    }
+#endif
+
     if (_log) {
         _log(level, buffer.data());
 #ifdef TRACY_ENABLE
